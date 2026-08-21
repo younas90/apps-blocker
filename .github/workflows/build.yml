@@ -1,0 +1,84 @@
+name: Build APK
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Generate Gradle wrapper if missing
+        run: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.11.1
+          fi
+          chmod +x ./gradlew
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Rename artifacts
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk       dist/PushGate-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk   dist/PushGate-release.apk
+          ls -lh dist
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: PushGate-apk
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      # Tagging a commit with v1.0.0 (or any v*) publishes a Release with the APKs
+      # attached, which is the link you hand to other people.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            Download **PushGate-release.apk** below and open it on your Android phone
+            (Android 8.0 / API 26 or newer).
+
+            Android will ask you to allow installing from this source — that is normal for
+            an APK that does not come from the Play Store.
+
+            After install, open PushGate and follow the setup. It will ask for:
+
+            - **Accessibility service** — required. Without it nothing is blocked.
+            - **Camera** — required, only used while counting push-ups.
+            - **Uninstall protection** — optional but recommended.
+
+            Everything runs on the phone. No account, no server.

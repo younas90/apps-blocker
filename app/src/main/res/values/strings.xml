@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PushGate</string>
+    <string name="accessibility_service_label">PushGate app blocking</string>
+    <string name="accessibility_service_description">PushGate needs to see which app is in the foreground so it can interrupt apps you have chosen to block, count down your daily quota, and guard its own settings while Strict Mode is on. PushGate never reads the content of your screen and nothing leaves your phone.</string>
+    <string name="device_admin_label">PushGate protection</string>
+    <string name="device_admin_description">Prevents PushGate from being uninstalled while a taper plan is running.</string>
+    <string name="notif_channel_guard">Protection status</string>
+    <string name="notif_channel_alerts">Alerts</string>
+</resources>

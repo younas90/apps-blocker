@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shackle -->
+    <path
+        android:strokeColor="#34D399"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M42,44 L42,36 A12,12 0 0 1 66,36 L66,44" />
+    <!-- Body -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M36,44 L72,44 A4,4 0 0 1 76,48 L76,72 A4,4 0 0 1 72,76 L36,76 A4,4 0 0 1 32,72 L32,48 A4,4 0 0 1 36,44 Z" />
+    <!-- Keyhole shaped like a rep arrow -->
+    <path
+        android:fillColor="#0B0F14"
+        android:pathData="M54,52 L62,62 L57,62 L57,70 L51,70 L51,62 L46,62 Z" />
+</vector>
