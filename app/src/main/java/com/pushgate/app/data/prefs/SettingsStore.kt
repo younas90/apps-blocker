@@ -42,17 +42,19 @@ data class Settings(
     val maxEarnedUnlocksPerDay: Int = 8,
 
     /** Elbow angle below which a rep counts as down. Lower is stricter. */
-    val downAngleThreshold: Float = 95f,
+    val downAngleThreshold: Float = 100f,
     /** Elbow angle above which a rep counts as up. */
-    val upAngleThreshold: Float = 155f,
+    val upAngleThreshold: Float = 148f,
     /** Max allowed hip sag or pike deviation from a straight body line, in degrees. */
-    val maxBodyBend: Float = 25f,
+    val maxBodyBend: Float = 32f,
     /** Reps faster than this are rejected as bouncing. */
-    val minRepMillis: Int = 600,
+    val minRepMillis: Int = 550,
 
     val allowEarnedUnlocks: Boolean = true,
     val quotaWarningSeconds: Int = 30,
     val vibrateOnRep: Boolean = true,
+    /** Keep the status notification up at all times rather than only while counting down. */
+    val alwaysShowGuardNotification: Boolean = false,
     val deviceAdminActive: Boolean = false,
     val cameraFacingFront: Boolean = true
 )
@@ -80,6 +82,7 @@ class SettingsStore(private val context: Context) {
         val allowEarned = booleanPreferencesKey("allow_earned")
         val warningSeconds = intPreferencesKey("warning_seconds")
         val vibrateOnRep = booleanPreferencesKey("vibrate_on_rep")
+        val alwaysShowGuard = booleanPreferencesKey("always_show_guard")
         val deviceAdminActive = booleanPreferencesKey("device_admin_active")
         val cameraFront = booleanPreferencesKey("camera_front")
     }
@@ -107,6 +110,7 @@ class SettingsStore(private val context: Context) {
             allowEarnedUnlocks = p[Keys.allowEarned] ?: d.allowEarnedUnlocks,
             quotaWarningSeconds = p[Keys.warningSeconds] ?: d.quotaWarningSeconds,
             vibrateOnRep = p[Keys.vibrateOnRep] ?: d.vibrateOnRep,
+            alwaysShowGuardNotification = p[Keys.alwaysShowGuard] ?: d.alwaysShowGuardNotification,
             deviceAdminActive = p[Keys.deviceAdminActive] ?: d.deviceAdminActive,
             cameraFacingFront = p[Keys.cameraFront] ?: d.cameraFacingFront
         )
@@ -134,6 +138,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setDeviceAdminActive(v: Boolean) = edit { it[Keys.deviceAdminActive] = v }
     suspend fun setCameraFront(v: Boolean) = edit { it[Keys.cameraFront] = v }
     suspend fun setVibrateOnRep(v: Boolean) = edit { it[Keys.vibrateOnRep] = v }
+    suspend fun setAlwaysShowGuard(v: Boolean) = edit { it[Keys.alwaysShowGuard] = v }
     suspend fun setRolloverHour(v: Int) = edit { it[Keys.rolloverHour] = v }
     suspend fun setWarningSeconds(v: Int) = edit { it[Keys.warningSeconds] = v }
 

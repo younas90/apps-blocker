@@ -61,7 +61,7 @@ data class ProtectionState(
     val deviceAdminActive: Boolean = false,
     val notificationsAllowed: Boolean = true
 ) {
-    val fullyArmed: Boolean get() = accessibilityEnabled && foregroundServiceRunning
+    val fullyArmed: Boolean get() = accessibilityEnabled
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -149,7 +149,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun armProtection() {
         val ctx = getApplication<Application>()
-        BlockerForegroundService.start(ctx)
+        if (settings.value.alwaysShowGuardNotification) BlockerForegroundService.start(ctx)
         WatchdogScheduler.schedule(ctx)
         DailyRollover.schedule(ctx)
         refreshProtection()
@@ -278,6 +278,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setMaxEarnedUnlocks(v: Int) = viewModelScope.launch { repo.settingsStore.setMaxEarnedUnlocks(v) }
     fun setAllowEarned(v: Boolean) = viewModelScope.launch { repo.settingsStore.setAllowEarnedUnlocks(v) }
     fun setCooldownMinutes(v: Int) = viewModelScope.launch { repo.settingsStore.setCooldownMinutes(v) }
+    fun setAlwaysShowGuard(v: Boolean) = viewModelScope.launch {
+        repo.settingsStore.setAlwaysShowGuard(v)
+        val ctx = getApplication<Application>()
+        if (v) BlockerForegroundService.start(ctx) else BlockerForegroundService.stop(ctx)
+    }
+
     fun setVibrate(v: Boolean) = viewModelScope.launch { repo.settingsStore.setVibrateOnRep(v) }
     fun setRolloverHour(v: Int) = viewModelScope.launch { repo.settingsStore.setRolloverHour(v) }
 
@@ -316,16 +322,16 @@ enum class FormPreset(
     FORGIVING(
         "Forgiving",
         "Counts most honest attempts. Good if you are starting from zero.",
-        downAngle = 110f, upAngle = 145f, maxBend = 35f, minRepMs = 450
+        downAngle = 115f, upAngle = 138f, maxBend = 45f, minRepMs = 400
     ),
     STANDARD(
         "Standard",
         "Real range of motion, straight body, no bouncing.",
-        downAngle = 95f, upAngle = 155f, maxBend = 25f, minRepMs = 600
+        downAngle = 100f, upAngle = 148f, maxBend = 32f, minRepMs = 550
     ),
     STRICT(
         "Strict",
-        "Chest to the floor, full lockout, plank held throughout.",
-        downAngle = 80f, upAngle = 165f, maxBend = 15f, minRepMs = 800
+        "Chest to the floor, arms locked out, plank held throughout.",
+        downAngle = 88f, upAngle = 158f, maxBend = 22f, minRepMs = 750
     )
 }

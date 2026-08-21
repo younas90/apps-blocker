@@ -73,7 +73,6 @@ class BlockerAccessibilityService : AccessibilityService() {
 
         Notifications.ensureChannels(this)
         Notifications.clearServiceDown(this)
-        BlockerForegroundService.start(this)
 
         imePackage = runCatching {
             AndroidSettings.Secure.getString(contentResolver, AndroidSettings.Secure.DEFAULT_INPUT_METHOD)
@@ -143,11 +142,9 @@ class BlockerAccessibilityService : AccessibilityService() {
         if (strict && !cooldownMatured(settingsSnapshot)) {
             Notifications.warnServiceDown(appContext)
         }
-        BlockerForegroundService.updateStatus(
-            appContext,
-            "PushGate is not protecting you",
-            "The accessibility service is off. Blocked apps are open."
-        )
+        // The high-priority alert above already says this; do not also raise a foreground
+        // service from a service that is being torn down.
+        BlockerForegroundService.stop(appContext)
     }
 
     // ------------------------------------------------------------------ foreground handling
@@ -361,12 +358,22 @@ class BlockerAccessibilityService : AccessibilityService() {
 
     // ------------------------------------------------------------------ notification
 
+    /**
+      * The permanent notification was the single most-complained-about thing in testing, and it
+      * bought very little: the accessibility service is a bound system service and survives on its
+      * own. The foreground service now only runs while a blocked app is actually being counted
+      * down, where the notification is genuinely useful because it shows the remaining time.
+      */
     private fun updateIdleNotification() {
-        BlockerForegroundService.updateStatus(
-            this,
-            "PushGate is on guard",
-            "Watching your blocked apps."
-        )
+        if (settingsSnapshot.alwaysShowGuardNotification) {
+            BlockerForegroundService.updateStatus(
+                this,
+                "PushGate is on guard",
+                "Watching your blocked apps."
+            )
+        } else {
+            BlockerForegroundService.stop(this)
+        }
     }
 
     private fun updateCountdownNotification() {

@@ -50,6 +50,20 @@ class AdminReceiver : DeviceAdminReceiver() {
                     context.getString(R.string.device_admin_description)
                 )
 
+        /**
+         * Whether anything on this device will actually answer the add-admin intent.
+         *
+         * A handful of OEM builds ship without the device-admin UI. Previously the tap simply did
+         * nothing and the user was left believing the button was broken; now the caller can fall
+         * back to the security settings screen and say what happened.
+         */
+        fun canRequestAdmin(context: Context): Boolean =
+            enableIntent(context).resolveActivity(context.packageManager) != null
+
+        /** Fallback route when the direct intent is unavailable. */
+        fun securitySettingsIntent(): Intent =
+            Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
+
         /** Programmatic removal, used once a disable cooldown has been served. */
         fun deactivate(context: Context) {
             runCatching { dpm(context).removeActiveAdmin(component(context)) }

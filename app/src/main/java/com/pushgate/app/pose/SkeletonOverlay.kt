@@ -36,7 +36,7 @@ fun SkeletonOverlay(
         state.lastRepAccepted == false -> Bad
         state.coaching == Coaching.HOLD_IT -> Warn
         state.coaching == Coaching.GO_LOWER -> Warn
-        state.coaching == Coaching.TURN_SIDEWAYS -> Warn
+        state.coaching == Coaching.STAND_DOWN -> Warn
         else -> Good
     }
 
@@ -84,7 +84,7 @@ fun SkeletonOverlay(
         val jointRadius = boneWidth * 1.15f
         for (idx in Lm.KEY_JOINTS) {
             val p = pts.getOrNull(idx) ?: continue
-            if (p.visibility < 0.4f) continue
+            if (p.visibility < 0.25f) continue
             val o = project(p)
             drawCircle(color.copy(alpha = 0.25f), jointRadius * 2.1f, o)
             drawCircle(color, jointRadius, o)
@@ -94,7 +94,7 @@ fun SkeletonOverlay(
         // Elbow emphasis: the joint the whole rep is judged on.
         for (idx in listOf(Lm.L_ELBOW, Lm.R_ELBOW)) {
             val p = pts.getOrNull(idx) ?: continue
-            if (p.visibility < 0.4f) continue
+            if (p.visibility < 0.25f) continue
             val o = project(p)
             drawCircle(
                 color = color,
@@ -115,7 +115,7 @@ private fun DrawScope.drawBones(
     for ((a, b) in Lm.CONNECTIONS) {
         val pa = pts.getOrNull(a) ?: continue
         val pb = pts.getOrNull(b) ?: continue
-        if (pa.visibility < 0.35f || pb.visibility < 0.35f) continue
+        if (pa.visibility < 0.25f || pb.visibility < 0.25f) continue
         drawLine(
             color = color,
             start = project(pa),

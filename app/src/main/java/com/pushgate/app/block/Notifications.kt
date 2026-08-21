@@ -11,7 +11,7 @@ import com.pushgate.app.R
 
 object Notifications {
 
-    const val CHANNEL_GUARD = "guard"
+    const val CHANNEL_GUARD = "guard_min"
     const val CHANNEL_ALERTS = "alerts"
 
     const val ID_GUARD = 1001
@@ -24,11 +24,15 @@ object Notifications {
             NotificationChannel(
                 CHANNEL_GUARD,
                 context.getString(R.string.notif_channel_guard),
-                NotificationManager.IMPORTANCE_LOW
+                // MIN keeps the icon out of the status bar on most launchers. Android will not
+                // let a foreground service run with no notification at all, so the next best
+                // thing is one that stays out of the way.
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Shows that PushGate is watching, plus your remaining quota."
+                description = "Only appears while you are inside a blocked app, showing the countdown."
                 setShowBadge(false)
                 enableVibration(false)
+                setSound(null, null)
             }
         )
 

@@ -62,6 +62,7 @@ import com.pushgate.app.ui.InstalledApp
 import com.pushgate.app.ui.MainViewModel
 import com.pushgate.app.ui.common.AppIcon
 import com.pushgate.app.ui.common.SectionCard
+import com.pushgate.app.ui.common.rememberAdminEnabler
 import com.pushgate.app.ui.common.SectionLabel
 import com.pushgate.app.ui.theme.Amber
 import com.pushgate.app.ui.theme.Chalk
@@ -441,6 +442,7 @@ private fun PriceStep(
 private fun PermissionsStep(viewModel: MainViewModel, onNext: () -> Unit) {
     val context = LocalContext.current
     val protection by viewModel.protection.collectAsStateWithLifecycle()
+    val enableAdmin = rememberAdminEnabler(viewModel)
 
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -523,14 +525,7 @@ private fun PermissionsStep(viewModel: MainViewModel, onNext: () -> Unit) {
                 done = protection.deviceAdminActive,
                 required = true,
                 cta = "Turn on uninstall protection"
-            ) {
-                GuardBypass.open(5, "onboarding: device admin")
-                runCatching {
-                    context.startActivity(
-                        AdminReceiver.enableIntent(context).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            }
+            ) { enableAdmin() }
         }
     }
 }

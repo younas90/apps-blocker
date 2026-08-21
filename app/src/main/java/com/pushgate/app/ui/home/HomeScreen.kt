@@ -42,6 +42,7 @@ import com.pushgate.app.quota.TaperPlan
 import com.pushgate.app.ui.AppStatus
 import com.pushgate.app.ui.MainViewModel
 import com.pushgate.app.ui.common.AppIcon
+import com.pushgate.app.ui.common.rememberAdminEnabler
 import com.pushgate.app.ui.common.MeterBar
 import com.pushgate.app.ui.common.SectionCard
 import com.pushgate.app.ui.theme.Amber
@@ -59,6 +60,7 @@ fun HomeScreen(viewModel: MainViewModel) {
     val protection by viewModel.protection.collectAsStateWithLifecycle()
     val totalReps by viewModel.totalReps.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val enableAdmin = rememberAdminEnabler(viewModel)
 
     val today = LocalDate.now()
     val dayIndex = TaperPlan.dayIndex(settings, today)
@@ -134,15 +136,7 @@ fun HomeScreen(viewModel: MainViewModel) {
                         "two seconds — no wait, no push-ups. Turning on uninstall protection " +
                         "closes that door.",
                     cta = "Close that door"
-                ) {
-                    GuardBypass.open(3, "activating uninstall protection")
-                    runCatching {
-                        context.startActivity(
-                            AdminReceiver.enableIntent(context)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
-                }
+                ) { enableAdmin() }
             }
         }
 

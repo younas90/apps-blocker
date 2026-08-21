@@ -46,7 +46,9 @@ class PushGateApp : Application(), CameraXConfig.Provider {
 
             // Anything that survived a reboot or an update gets re-armed here, so protection is
             // never one crash away from silently ending.
-            BlockerForegroundService.start(this@PushGateApp)
+            if (settings.alwaysShowGuardNotification) {
+                BlockerForegroundService.start(this@PushGateApp)
+            }
             WatchdogScheduler.schedule(this@PushGateApp)
             DailyRollover.schedule(this@PushGateApp)
 

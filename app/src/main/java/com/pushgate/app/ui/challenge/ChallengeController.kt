@@ -126,9 +126,9 @@ class ChallengeController(
         val c = counter ?: return
 
         val next = if (f.hasPose) {
-            c.onPose(f.world, f.pixels, f.timestampMs)
+            c.onPose(f.world, f.pixels, f.imageWidth, f.imageHeight, f.timestampMs, f.fps)
         } else {
-            c.onNoPose(f.timestampMs)
+            c.onNoPose(f.timestampMs, f.fps)
         }
         state = next
 

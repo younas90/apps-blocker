@@ -53,6 +53,7 @@ import com.pushgate.app.quota.TaperPlan
 import com.pushgate.app.ui.FormPreset
 import com.pushgate.app.ui.MainViewModel
 import com.pushgate.app.ui.common.ProtectedActionDialog
+import com.pushgate.app.ui.common.rememberAdminEnabler
 import com.pushgate.app.ui.common.SectionCard
 import com.pushgate.app.ui.theme.Amber
 import com.pushgate.app.ui.theme.Chalk
@@ -70,6 +71,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val protection by viewModel.protection.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val enableAdmin = rememberAdminEnabler(viewModel)
 
     var showAdvanced by remember { mutableStateOf(false) }
     var blockedAction by remember { mutableStateOf<Pair<String, ProtectionGate.Verdict>?>(null) }
@@ -134,15 +136,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 UninstallProtectionRow(
                     active = protection.deviceAdminActive,
                     canRemove = ProtectionGate.isAllowed(settings),
-                    onEnable = {
-                        GuardBypass.open(3, "activating uninstall protection")
-                        runCatching {
-                            context.startActivity(
-                                AdminReceiver.enableIntent(context)
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                        }
-                    },
+                    onEnable = enableAdmin,
                     onRemove = {
                         if (ProtectionGate.isAllowed(settings)) {
                             viewModel.deactivateDeviceAdmin()
@@ -374,6 +368,29 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         Switch(
                             checked = settings.allowEarnedUnlocks,
                             onCheckedChange = { viewModel.setAllowEarned(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Ink,
+                                checkedTrackColor = Emerald,
+                                uncheckedThumbColor = Mist,
+                                uncheckedTrackColor = InkCard
+                            )
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Always show the status notification", color = Chalk, fontSize = 15.sp)
+                            Text(
+                                "Off by default. It normally appears only while you are inside a " +
+                                    "blocked app, showing the countdown.",
+                                color = Mist,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Switch(
+                            checked = settings.alwaysShowGuardNotification,
+                            onCheckedChange = { viewModel.setAlwaysShowGuard(it) },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Ink,
                                 checkedTrackColor = Emerald,

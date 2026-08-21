@@ -2,7 +2,9 @@ package com.pushgate.app.pose
 
 import kotlin.math.abs
 import kotlin.math.acos
+import kotlin.math.atan2
 import kotlin.math.hypot
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /** MediaPipe Pose landmark indices. Only the ones a push-up actually needs. */
@@ -22,7 +24,7 @@ object Lm {
     const val R_ANKLE = 28
 
     /**
-     * Skeleton edges to draw. The 468 face points are deliberately omitted: they add nothing to a
+     * Skeleton edges to draw. The face points are deliberately omitted: they add nothing to a
      * push-up and turn the overlay into noise.
      */
     val CONNECTIONS: List<Pair<Int, Int>> = listOf(
@@ -35,14 +37,14 @@ object Lm {
         R_HIP to R_KNEE, R_KNEE to R_ANKLE
     )
 
-    /** Joints drawn as dots, and the set that must be visible for a rep to count. */
     val KEY_JOINTS = listOf(
         L_SHOULDER, R_SHOULDER, L_ELBOW, R_ELBOW, L_WRIST, R_WRIST,
         L_HIP, R_HIP, L_KNEE, R_KNEE, L_ANKLE, R_ANKLE
     )
-
-    val REQUIRED_FOR_REP = listOf(L_SHOULDER, R_SHOULDER, L_ELBOW, R_ELBOW, L_WRIST, R_WRIST, L_HIP, R_HIP)
 }
+
+/** One half of the body. A push-up seen side-on only ever shows one of these properly. */
+enum class Side { LEFT, RIGHT }
 
 /** A landmark in whatever space the caller is working in, plus how sure the model is about it. */
 data class P3(val x: Float, val y: Float, val z: Float, val visibility: Float)
@@ -73,13 +75,12 @@ object PoseMath {
         (a.x + b.x) / 2f,
         (a.y + b.y) / 2f,
         (a.z + b.z) / 2f,
-        minOf(a.visibility, b.visibility)
+        maxOf(a.visibility, b.visibility)
     )
 
     /**
-     * How far the body is from a plank, in degrees. 0 is a perfect line shoulder-hip-knee;
-     * positive means the hips are sagging or piked. This is the check that kills the
-     * "bob your head and call it a rep" cheat.
+     * How far the body is from a plank, in degrees. 0 is a perfect line shoulder-hip-knee.
+     * NaN when the knee is not visible, which simply means the check is skipped.
      */
     fun bodyLineDeviation(shoulder: P3, hip: P3, knee: P3): Float {
         val angle = angleAt(shoulder, hip, knee)
@@ -87,16 +88,48 @@ object PoseMath {
     }
 
     /**
-     * True when the torso reads as horizontal in the *image*, which is what separates a push-up
-     * from a squat, a sit-up or someone nodding at their phone.
+     * Which side of the body the camera can actually see, and how well.
      *
-     * Uses pixel-space coordinates so the frame's aspect ratio is already accounted for.
+     * A push-up filmed side-on — the position the app itself recommends — hides the far arm behind
+     * the near one, so the far-side landmarks are low-confidence by definition. Judging the rep on
+     * whichever side is clearer is the only thing that works from that angle.
      */
-    fun isTorsoHorizontal(shoulderPx: P3, hipPx: P3, tolerance: Float = 1.15f): Boolean {
+    fun bestSide(pixels: List<P3>): Pair<Side, Float> {
+        fun score(shoulder: Int, elbow: Int, wrist: Int): Float {
+            val s = pixels.getOrNull(shoulder)?.visibility ?: 0f
+            val e = pixels.getOrNull(elbow)?.visibility ?: 0f
+            val w = pixels.getOrNull(wrist)?.visibility ?: 0f
+            return (s + e + w) / 3f
+        }
+        val left = score(Lm.L_SHOULDER, Lm.L_ELBOW, Lm.L_WRIST)
+        val right = score(Lm.R_SHOULDER, Lm.R_ELBOW, Lm.R_WRIST)
+        return if (left >= right) Side.LEFT to left else Side.RIGHT to right
+    }
+
+    fun shoulderOf(side: Side) = if (side == Side.LEFT) Lm.L_SHOULDER else Lm.R_SHOULDER
+    fun elbowOf(side: Side) = if (side == Side.LEFT) Lm.L_ELBOW else Lm.R_ELBOW
+    fun wristOf(side: Side) = if (side == Side.LEFT) Lm.L_WRIST else Lm.R_WRIST
+    fun hipOf(side: Side) = if (side == Side.LEFT) Lm.L_HIP else Lm.R_HIP
+    fun kneeOf(side: Side) = if (side == Side.LEFT) Lm.L_KNEE else Lm.R_KNEE
+
+    /** How far the torso is from horizontal in the image, in degrees. 0 flat, 90 upright. */
+    fun torsoTiltDegrees(shoulderPx: P3, hipPx: P3): Float {
         val dx = abs(shoulderPx.x - hipPx.x)
         val dy = abs(shoulderPx.y - hipPx.y)
-        if (dx < 1e-3f && dy < 1e-3f) return false
-        return dx > dy * tolerance
+        return Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+    }
+
+    /**
+     * Whether the torso is long enough on screen for its tilt to mean anything.
+     *
+     * Pointing the phone straight at someone squashes shoulders and hips almost on top of each
+     * other, and the tilt of a five-pixel line is pure noise. Previously that noise was read as
+     * "you are not horizontal" and the rep was refused — so facing the camera never worked.
+     */
+    fun torsoMeasurable(shoulderPx: P3, hipPx: P3, imageWidth: Int, imageHeight: Int): Boolean {
+        val len = hypot(shoulderPx.x - hipPx.x, shoulderPx.y - hipPx.y)
+        val shortEdge = min(imageWidth, imageHeight).toFloat()
+        return shortEdge > 0f && len > shortEdge * 0.12f
     }
 
     fun distance(a: P3, b: P3): Float = hypot((a.x - b.x), (a.y - b.y))

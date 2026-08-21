@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Size
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,6 +51,11 @@ class ChallengeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // A push-up set involves not touching the phone for a minute, which is exactly what the
+        // display timeout treats as idle. Without this the screen sleeps mid-rep.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
 
         val pkg = intent.getStringExtra(EXTRA_PACKAGE)
         val reps = intent.getIntExtra(EXTRA_REPS, 0)

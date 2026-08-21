@@ -93,7 +93,9 @@ object WatchdogScheduler {
 
         if (a11yOn) {
             Notifications.clearServiceDown(context)
-            if (!BlockerForegroundService.isRunning) BlockerForegroundService.start(context)
+            if (settings.alwaysShowGuardNotification && !BlockerForegroundService.isRunning) {
+                BlockerForegroundService.start(context)
+            }
         } else {
             repo.logEvent(EventLog.SERVICE_DOWN, detail = "watchdog found service disabled")
             if (settings.strictMode) Notifications.warnServiceDown(context)
@@ -140,7 +142,6 @@ class BootReceiver : BroadcastReceiver() {
 
         val appContext = context.applicationContext
         Notifications.ensureChannels(appContext)
-        BlockerForegroundService.start(appContext)
         WatchdogScheduler.schedule(appContext)
     }
 

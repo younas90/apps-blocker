@@ -53,6 +53,9 @@ import androidx.compose.ui.unit.sp
 import com.pushgate.app.pose.Coaching
 import com.pushgate.app.pose.PushUpCounter
 import com.pushgate.app.pose.SkeletonOverlay
+import kotlin.math.roundToInt
+import com.pushgate.app.pose.Side
+import com.pushgate.app.pose.RepState
 import com.pushgate.app.ui.theme.Amber
 import com.pushgate.app.ui.theme.Chalk
 import com.pushgate.app.ui.theme.Crimson
@@ -101,6 +104,14 @@ fun ChallengeScreen(
                     minutes = controller.minutesOffered,
                     onGiveUp = onGiveUp,
                     onFlip = controller::toggleCamera
+                )
+
+                DiagnosticsStrip(
+                    state = controller.state,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                        .padding(top = 62.dp)
                 )
 
                 DepthMeter(
@@ -214,6 +225,7 @@ private fun BottomPanel(controller: ChallengeController) {
         Coaching.GOOD -> Emerald
         Coaching.HOLD_IT -> Amber
         Coaching.STRAIGHTEN_BODY, Coaching.TOO_FAST -> Crimson
+        Coaching.READY -> Emerald
         else -> Mist
     }
 
@@ -491,5 +503,58 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit, onGiveUp: () -> Uni
 
         Spacer(Modifier.height(6.dp))
         TextButton(onClick = onGiveUp) { Text("Back", color = Mist) }
+    }
+}
+
+/**
+ * Live read-out of what the detector actually sees.
+ *
+ * The first on-device test counted zero reps with no way to tell whether the camera was dead, the
+ * body was missed, or a rule was silently refusing every rep. This makes the answer visible while
+ * you are still lying on the floor.
+ */
+@Composable
+private fun DiagnosticsStrip(state: RepState, modifier: Modifier = Modifier) {
+    val bodyColor = if (state.personVisible) Emerald else Crimson
+
+    Row(
+        modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Ink.copy(alpha = 0.55f))
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(bodyColor)
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            buildString {
+                append(if (state.personVisible) "body" else "no body")
+                state.sideUsed?.let {
+                    append(" · ")
+                    append(if (it == Side.LEFT) "L" else "R")
+                    append(" ")
+                    append((state.sideVisibility * 100).roundToInt())
+                    append("%")
+                }
+                if (!state.elbowAngle.isNaN()) {
+                    append(" · elbow ")
+                    append(state.elbowAngle.roundToInt())
+                    append("°")
+                }
+                if (state.fps > 0f) {
+                    append(" · ")
+                    append(state.fps.roundToInt())
+                    append("fps")
+                }
+            },
+            color = Mist,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace
+        )
     }
 }
