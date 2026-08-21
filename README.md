@@ -94,20 +94,38 @@ Joint angles are computed from **world landmarks** (metric, hip-centred) rather 
 image coordinates, because image coordinates are stretched by the frame's aspect ratio and would
 report a straight arm as bent in portrait.
 
-A rep only counts if it survives every one of these:
+The rep is judged on **whichever side of your body the camera can see clearly**, not both. Seen
+side-on your far arm is hidden behind your near arm, so demanding both sides is a contradiction —
+and in v1.0 it was one, which is why the counter reported zero reps for every position anyone
+tried.
+
+A rep only counts if it survives all of these:
 
 | Check | What it stops |
 |---|---|
 | Elbow angle must cross **below** the down threshold and **back above** the up threshold | Half-reps |
-| Shoulder–hip–knee must stay within the bend tolerance | Sagging hips, piked bums, head-bobbing |
-| Torso must read as horizontal in the frame | Squats, sit-ups, nodding at the phone |
+| Shoulder-hip-knee must stay within the bend tolerance (skipped if your knees are out of frame) | Sagging hips, piked bums, head-bobbing |
+| Torso must not be clearly upright (skipped when you are too foreshortened to measure) | Squats, sit-ups, nodding at the phone |
 | Rep must take longer than the cadence floor | Frantic bouncing |
-| Required landmarks must stay visible throughout | Ducking out of shot at the bottom |
+| Tracking must not be lost mid-rep | Ducking out of shot at the bottom |
 | **One random rep per set must be held at the bottom** | Replaying a pre-recorded video of yourself |
 
 That last one is the interesting one. The counter picks a random rep index at the start of every
 set and demands a 1.2-second hold at the bottom of it. A video cannot know which rep will be
 chosen, so a replay attack fails the set.
+
+### Where to put the phone
+
+Anywhere it can see most of you. Side-on with the phone on the floor a metre away is ideal, but
+facing it works too. A diagnostics strip along the top shows what the detector is actually seeing:
+
+```
+● body · R 82% · elbow 143° · 24fps
+```
+
+If that dot is red, the model cannot find a body — move back or improve the light. If the elbow
+angle is not swinging by 50 degrees or more between the top and bottom of your rep, you are either
+not going deep enough or the camera cannot see your arm.
 
 Three strictness presets ship — Forgiving, Standard, Strict — and each threshold is individually
 tunable in Settings.
