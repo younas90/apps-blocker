@@ -223,9 +223,7 @@ private fun CameraSurface(
                     // is almost always CameraX failing to initialise, not missing hardware.
                     controller.onPoseError(
                         buildString {
-                            append("CameraX could not start.
-
-")
+                            append("CameraX could not start.\n\n")
                             append(
                                 why?.let { "${it.javaClass.simpleName}: ${it.message ?: "no message"}" }
                                     ?: "The camera provider returned nothing."
@@ -293,9 +291,7 @@ private fun CameraSurface(
                     }
                     if (fallback.isFailure) {
                         controller.onPoseError(
-                            "Could not open the camera.
-
-" +
+                            "Could not open the camera.\n\n" +
                                 "${t.javaClass.simpleName}: ${t.message ?: "no message"}"
                         )
                     }

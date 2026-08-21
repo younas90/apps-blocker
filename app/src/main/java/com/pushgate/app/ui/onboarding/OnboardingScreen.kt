@@ -517,9 +517,7 @@ private fun PermissionsStep(viewModel: MainViewModel, onNext: () -> Unit) {
                 title = "Uninstall protection",
                 body = "Without this, long-pressing the PushGate icon and tapping uninstall wipes " +
                     "everything in two seconds — no wait, no push-ups. Turning it on is what makes " +
-                    "the rest of this app mean anything.
-
-" +
+                    "the rest of this app mean anything.\n\n" +
                     "It registers PushGate as a device admin and nothing else: no wipe, no lock, " +
                     "no reading your screen.",
                 done = protection.deviceAdminActive,
