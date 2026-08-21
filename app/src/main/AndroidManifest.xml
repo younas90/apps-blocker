@@ -19,6 +19,17 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!--
+      MediaPipe's manifest drags INTERNET in transitively. PushGate has no server and no reason
+      to reach the network, so it is stripped at merge time: without INTERNET the OS itself
+      guarantees that camera frames, usage data and rep history cannot leave the device.
+
+      ACCESS_NETWORK_STATE is deliberately left alone. WorkManager's constraint trackers query it
+      on startup and crash without it, and on its own it only permits *observing* connectivity —
+      with no INTERNET permission there is nothing it could transmit.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application

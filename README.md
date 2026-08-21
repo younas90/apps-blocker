@@ -33,6 +33,11 @@ Everything runs on the phone. No account, no server, no analytics, and the camer
 
 To grab the whole project as a zip instead, use the green **Code → Download ZIP** button.
 
+The APK is around 49 MB. Most of that is MediaPipe's pose-detection native libraries, shipped for
+all four ABIs so the same single file installs on any phone *and* in an emulator. Restricting
+`abiFilters` to `arm64-v8a` and `armeabi-v7a` in `app/build.gradle.kts` roughly halves it, at the
+cost of x86 emulator support.
+
 ### Permissions it will ask for
 
 | Permission | Why | Optional? |
@@ -203,7 +208,18 @@ across the service and the UI.
 
 ## Privacy
 
-- No network permission is requested. The app **cannot** phone home.
+- **The `INTERNET` permission is explicitly stripped from the merged manifest.** MediaPipe pulls it
+  in transitively; PushGate removes it with `tools:node="remove"`. Without it the operating system
+  itself guarantees the app cannot transmit anything — this is not a promise in a privacy policy,
+  it is enforced by Android. Verify it yourself on any build:
+
+  ```bash
+  aapt2 dump badging PushGate-release.apk | grep uses-permission
+  ```
+
+  `ACCESS_NETWORK_STATE` does survive, because WorkManager's constraint trackers read it on startup.
+  On its own it only permits *observing* whether there is a connection; with no `INTERNET`
+  permission there is nothing it could send.
 - Camera frames go from CameraX to MediaPipe to the screen and are then discarded. Nothing is
   written to disk.
 - Usage data, rep history and the event log live in a local Room database that is excluded from
