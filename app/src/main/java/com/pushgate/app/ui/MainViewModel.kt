@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.pushgate.app.block.AdminReceiver
 import com.pushgate.app.block.BlockerAccessibilityService
 import com.pushgate.app.block.BlockerForegroundService
+import com.pushgate.app.block.ProtectionGate
 import com.pushgate.app.block.WatchdogScheduler
 import com.pushgate.app.data.db.BlockedApp
 import com.pushgate.app.data.db.DailyUsage
@@ -199,16 +200,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun toggleBlockedApp(pkg: String, enabled: Boolean) {
-        viewModelScope.launch { repo.setBlockedAppEnabled(pkg, enabled) }
+    /**
+     * Turning an app back ON is strengthening, so it is free. Pausing it is weakening, so it is
+     * gated. Returns false when the gate refused, and the caller shows the wait dialog.
+     */
+    fun toggleBlockedApp(pkg: String, enabled: Boolean): Boolean {
+        if (!enabled && !gateAllows()) return false
+        viewModelScope.launch {
+            repo.setBlockedAppEnabled(pkg, enabled)
+            if (!enabled) consumeGate()
+        }
+        return true
     }
 
-    fun removeBlockedApp(pkg: String) {
-        viewModelScope.launch { repo.removeBlockedApp(pkg) }
+    fun removeBlockedApp(pkg: String): Boolean {
+        if (!gateAllows()) return false
+        viewModelScope.launch {
+            repo.removeBlockedApp(pkg)
+            consumeGate()
+        }
+        return true
     }
 
-    fun setCustomBudget(pkg: String, minutes: Int?) {
-        viewModelScope.launch { repo.setCustomBudget(pkg, minutes) }
+    /**
+     * Raising a budget (or clearing an override back to a larger plan default) is weakening.
+     * Lowering it is not, so tightening the screws never needs permission.
+     */
+    fun setCustomBudget(pkg: String, minutes: Int?): Boolean {
+        val current = blockedApps.value.firstOrNull { it.packageName == pkg }
+        val today = LocalDate.now()
+        val planMinutes = TaperPlan.minutesToday(settings.value, today)
+        val before = current?.customBudgetMinutes ?: planMinutes
+        val after = minutes ?: planMinutes
+
+        if (after > before && !gateAllows()) return false
+        viewModelScope.launch {
+            repo.setCustomBudget(pkg, minutes)
+            if (after > before) consumeGate()
+        }
+        return true
+    }
+
+    fun gateAllows(): Boolean = ProtectionGate.isAllowed(settings.value)
+
+    fun gateVerdict(): ProtectionGate.Verdict = ProtectionGate.check(settings.value)
+
+    /** A served wait buys exactly one change, then has to be served again. */
+    private suspend fun consumeGate() {
+        if (settings.value.strictMode) repo.settingsStore.setCooldownEndsAt(0L)
     }
 
     fun startPlan(days: Int, startMinutes: Int, endMinutes: Int) {
@@ -225,7 +264,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setStrictMode(on: Boolean) = viewModelScope.launch { repo.settingsStore.setStrictMode(on) }
+    fun setStrictMode(on: Boolean): Boolean {
+        if (!on && !gateAllows()) return false
+        viewModelScope.launch {
+            repo.settingsStore.setStrictMode(on)
+            repo.settingsStore.setCooldownEndsAt(0L)
+        }
+        return true
+    }
     fun setBaseReps(v: Int) = viewModelScope.launch { repo.settingsStore.setBaseReps(v) }
     fun setBaseMinutes(v: Int) = viewModelScope.launch { repo.settingsStore.setBaseUnlockMinutes(v) }
     fun setEscalation(v: Float) = viewModelScope.launch { repo.settingsStore.setEscalation(v) }

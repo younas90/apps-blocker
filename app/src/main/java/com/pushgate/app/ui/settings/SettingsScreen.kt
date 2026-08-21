@@ -2,7 +2,11 @@ package com.pushgate.app.ui.settings
 
 import android.content.Intent
 import android.provider.Settings as AndroidSettings
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,22 +15,32 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,12 +48,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pushgate.app.block.AdminReceiver
 import com.pushgate.app.block.GuardBypass
+import com.pushgate.app.block.ProtectionGate
 import com.pushgate.app.quota.TaperPlan
 import com.pushgate.app.ui.FormPreset
 import com.pushgate.app.ui.MainViewModel
-import com.pushgate.app.ui.common.KeyValueRow
+import com.pushgate.app.ui.common.ProtectedActionDialog
 import com.pushgate.app.ui.common.SectionCard
-import com.pushgate.app.ui.common.SectionLabel
 import com.pushgate.app.ui.theme.Amber
 import com.pushgate.app.ui.theme.Chalk
 import com.pushgate.app.ui.theme.Crimson
@@ -47,6 +61,7 @@ import com.pushgate.app.ui.theme.Emerald
 import com.pushgate.app.ui.theme.Ink
 import com.pushgate.app.ui.theme.InkCard
 import com.pushgate.app.ui.theme.Mist
+import com.pushgate.app.util.TimeKeys
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -56,8 +71,17 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val protection by viewModel.protection.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    val cooldownPending = settings.cooldownEndsAt > System.currentTimeMillis()
-    val cooldownMatured = settings.cooldownEndsAt in 1..System.currentTimeMillis()
+    var showAdvanced by remember { mutableStateOf(false) }
+    var blockedAction by remember { mutableStateOf<Pair<String, ProtectionGate.Verdict>?>(null) }
+
+    blockedAction?.let { (action, verdict) ->
+        ProtectedActionDialog(
+            action = action,
+            verdict = verdict,
+            onStartWait = { viewModel.startCooldown(); blockedAction = null },
+            onDismiss = { blockedAction = null }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -66,33 +90,30 @@ fun SettingsScreen(viewModel: MainViewModel) {
     ) {
         item { Text("Settings", color = Chalk, style = MaterialTheme.typography.displaySmall) }
 
-        // ------------------------------------------------------------ protection
+        // ---------------------------------------------------------------- protection
         item {
-            SectionCard(accent = if (protection.fullyArmed) Emerald else Crimson) {
-                SectionLabel(
-                    if (protection.fullyArmed) "Armed" else "Not fully armed",
-                    if (protection.fullyArmed) Emerald else Crimson
+            val armed = protection.accessibilityEnabled
+            SectionCard(accent = if (armed) Emerald else Crimson) {
+                Text(
+                    if (armed) "PushGate is watching" else "PushGate is switched off",
+                    color = if (armed) Emerald else Crimson,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
                 )
-                Spacer(Modifier.height(12.dp))
-                KeyValueRow(
-                    "Accessibility service",
-                    if (protection.accessibilityEnabled) "On" else "Off",
-                    if (protection.accessibilityEnabled) Emerald else Crimson
-                )
-                KeyValueRow(
-                    "Background guard",
-                    if (protection.foregroundServiceRunning) "Running" else "Stopped",
-                    if (protection.foregroundServiceRunning) Emerald else Amber
-                )
-                KeyValueRow(
-                    "Uninstall protection",
-                    if (protection.deviceAdminActive) "On" else "Off",
-                    if (protection.deviceAdminActive) Emerald else Amber
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (armed) {
+                        "Your blocked apps are being held to their daily minutes."
+                    } else {
+                        "Nothing is being blocked right now."
+                    },
+                    color = Mist,
+                    style = MaterialTheme.typography.bodyMedium
                 )
 
                 Spacer(Modifier.height(14.dp))
 
-                if (!protection.accessibilityEnabled) {
+                if (!armed) {
                     Button(
                         onClick = {
                             GuardBypass.open(3, "enabling accessibility service")
@@ -104,49 +125,52 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Emerald, contentColor = Ink),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
                         shape = RoundedCornerShape(12.dp)
-                    ) { Text("Enable accessibility service", fontWeight = FontWeight.Bold) }
-                    Spacer(Modifier.height(8.dp))
+                    ) { Text("Switch it back on", fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.height(10.dp))
                 }
 
-                if (!protection.deviceAdminActive) {
-                    OutlinedButton(
-                        onClick = {
-                            GuardBypass.open(3, "activating uninstall protection")
-                            runCatching {
-                                context.startActivity(
-                                    AdminReceiver.enableIntent(context)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) { Text("Turn on uninstall protection", color = Emerald) }
-                } else if (cooldownMatured) {
-                    OutlinedButton(
-                        onClick = {
+                UninstallProtectionRow(
+                    active = protection.deviceAdminActive,
+                    canRemove = ProtectionGate.isAllowed(settings),
+                    onEnable = {
+                        GuardBypass.open(3, "activating uninstall protection")
+                        runCatching {
+                            context.startActivity(
+                                AdminReceiver.enableIntent(context)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
+                    onRemove = {
+                        if (ProtectionGate.isAllowed(settings)) {
                             viewModel.deactivateDeviceAdmin()
                             viewModel.clearCooldown()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) { Text("Remove uninstall protection", color = Crimson) }
-                }
+                        } else {
+                            blockedAction =
+                                "turning off uninstall protection" to viewModel.gateVerdict()
+                        }
+                    }
+                )
             }
         }
 
-        // ------------------------------------------------------------ strict mode
+        // ---------------------------------------------------------------- strict mode
         item {
             SectionCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Strict Mode", color = Chalk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                        Text(
+                            "Make it hard to quit",
+                            color = Chalk,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
+                        )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Blocks the Settings screens that would switch PushGate off. " +
-                                "You can still get there — it just costs a wait.",
+                            "Removing an app, pausing one, or switching PushGate off all take a " +
+                                "${settings.cooldownMinutes}-minute wait first.",
                             color = Mist,
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -154,10 +178,11 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     Spacer(Modifier.width(10.dp))
                     Switch(
                         checked = settings.strictMode,
-                        enabled = !settings.strictMode || cooldownMatured,
                         onCheckedChange = { on ->
-                            viewModel.setStrictMode(on)
-                            if (!on) viewModel.clearCooldown()
+                            if (!viewModel.setStrictMode(on)) {
+                                blockedAction =
+                                    "switching this off" to viewModel.gateVerdict()
+                            }
                         },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Ink,
@@ -169,135 +194,85 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
 
                 if (settings.strictMode) {
-                    Spacer(Modifier.height(14.dp))
-                    when {
-                        cooldownMatured -> Text(
-                            "Cooldown served. You can turn Strict Mode off now.",
-                            color = Emerald,
-                            style = MaterialTheme.typography.bodyMedium
+                    Spacer(Modifier.height(12.dp))
+                    when (val v = ProtectionGate.check(settings)) {
+                        is ProtectionGate.Verdict.Allowed -> Banner(
+                            "The wait is served — your next change goes through.",
+                            Emerald
                         )
-                        cooldownPending -> Text(
-                            "Cooldown ends in ${
-                                ((settings.cooldownEndsAt - System.currentTimeMillis()) / 60_000).coerceAtLeast(1)
-                            } minutes.",
-                            color = Amber,
-                            style = MaterialTheme.typography.bodyMedium
+                        is ProtectionGate.Verdict.Waiting -> Banner(
+                            "Waiting: ${TimeKeys.formatDuration(v.remainingMs)} to go.",
+                            Amber
                         )
-                        else -> OutlinedButton(
-                            onClick = { viewModel.startCooldown() },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                "Start ${settings.cooldownMinutes}-minute cooldown",
-                                color = Mist
-                            )
-                        }
+                        is ProtectionGate.Verdict.NeedsWait -> Banner(
+                            "Everything is locked in. Changes need a ${v.minutes}-minute wait.",
+                            Mist
+                        )
                     }
-
-                    Spacer(Modifier.height(10.dp))
-                    LabelledSlider(
-                        label = "Cooldown length",
-                        value = settings.cooldownMinutes.toFloat(),
-                        range = 5f..180f,
-                        steps = 34,
-                        display = { "${it.roundToInt()} min" },
-                        onChange = { viewModel.setCooldownMinutes(it.roundToInt()) }
-                    )
                 }
             }
         }
 
-        // ------------------------------------------------------------ the price
+        // ---------------------------------------------------------------- the price
         item {
             SectionCard {
-                SectionLabel("The price")
-                Spacer(Modifier.height(12.dp))
+                Text("The price of more time", color = Chalk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Spacer(Modifier.height(14.dp))
 
-                LabelledSlider(
-                    label = "Push-ups per unlock",
-                    value = settings.baseReps.toFloat(),
-                    range = 1f..40f,
-                    steps = 38,
-                    display = { "${it.roundToInt()} reps" },
-                    onChange = { viewModel.setBaseReps(it.roundToInt()) }
-                )
-
-                LabelledSlider(
-                    label = "Minutes bought",
-                    value = settings.baseUnlockMinutes.toFloat(),
-                    range = 1f..15f,
-                    steps = 13,
-                    display = { "${it.roundToInt()} min" },
-                    onChange = { viewModel.setBaseMinutes(it.roundToInt()) }
-                )
-
-                LabelledSlider(
-                    label = "Price escalation per unlock",
-                    value = settings.escalation,
-                    range = 0f..1.5f,
-                    steps = 14,
-                    display = { "+${(it * 100).roundToInt()}%" },
-                    onChange = { viewModel.setEscalation(it) }
-                )
-
-                LabelledSlider(
-                    label = "Unlocks allowed per day",
-                    value = settings.maxEarnedUnlocksPerDay.toFloat(),
-                    range = 1f..20f,
-                    steps = 18,
-                    display = { "${it.roundToInt()}" },
-                    onChange = { viewModel.setMaxEarnedUnlocks(it.roundToInt()) }
-                )
-
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    priceLadder(settings.baseReps, settings.escalation),
-                    color = Mist,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Allow buying time at all", color = Chalk, fontSize = 15.sp)
-                        Text(
-                            "Off means the daily budget is the hard ceiling — no push-up escape hatch.",
-                            color = Mist,
-                            fontSize = 12.sp
-                        )
+                        Text("${settings.baseReps}", color = Chalk, fontSize = 38.sp, fontWeight = FontWeight.Black)
+                        Text("push-ups", color = Mist, fontSize = 13.sp)
                     }
-                    Switch(
-                        checked = settings.allowEarnedUnlocks,
-                        onCheckedChange = { viewModel.setAllowEarned(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Ink,
-                            checkedTrackColor = Emerald,
-                            uncheckedThumbColor = Mist,
-                            uncheckedTrackColor = InkCard
+                    Text("buys", color = Mist, fontSize = 14.sp)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        Text(
+                            "${settings.baseUnlockMinutes}",
+                            color = Emerald,
+                            fontSize = 38.sp,
+                            fontWeight = FontWeight.Black
                         )
-                    )
+                        Text("minutes", color = Mist, fontSize = 13.sp)
+                    }
                 }
+
+                Spacer(Modifier.height(14.dp))
+                PlainSlider("Push-ups", settings.baseReps.toFloat(), 1f..40f, 38, { "${it.roundToInt()}" }) {
+                    viewModel.setBaseReps(it.roundToInt())
+                }
+                PlainSlider("Minutes", settings.baseUnlockMinutes.toFloat(), 1f..15f, 13, { "${it.roundToInt()}" }) {
+                    viewModel.setBaseMinutes(it.roundToInt())
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Each unlock today costs more than the last: " +
+                        priceLadder(settings.baseReps, settings.escalation),
+                    color = Mist,
+                    fontSize = 12.sp
+                )
             }
         }
 
-        // ------------------------------------------------------------ form strictness
+        // ---------------------------------------------------------------- difficulty
         item {
             SectionCard {
-                SectionLabel("How strictly reps are judged")
+                Text("How strict is a rep?", color = Chalk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                 Spacer(Modifier.height(12.dp))
                 FormPreset.entries.forEach { preset ->
                     val active = settings.downAngleThreshold == preset.downAngle &&
                         settings.upAngleThreshold == preset.upAngle
-                    OutlinedButton(
-                        onClick = { viewModel.setFormStrictness(preset) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = if (active) Emerald.copy(alpha = 0.12f) else Ink
-                        )
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (active) Emerald.copy(alpha = 0.13f) else Ink)
+                            .clickable { viewModel.setFormStrictness(preset) }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Column(Modifier.weight(1f)) {
                             Text(
                                 preset.label,
                                 color = if (active) Emerald else Chalk,
@@ -305,75 +280,131 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             )
                             Text(preset.description, color = Mist, fontSize = 12.sp)
                         }
+                        if (active) Icon(Icons.Default.Check, null, tint = Emerald)
                     }
                     Spacer(Modifier.height(6.dp))
                 }
             }
         }
 
-        // ------------------------------------------------------------ taper
+        // ---------------------------------------------------------------- plan
         item {
             SectionCard {
-                SectionLabel("Taper plan")
-                Spacer(Modifier.height(10.dp))
+                Text("Your plan", color = Chalk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Spacer(Modifier.height(8.dp))
                 val today = LocalDate.now()
                 Text(
-                    "Day ${(TaperPlan.dayIndex(settings, today) + 1).coerceAtLeast(1)} of ${settings.planDays} · " +
-                        "${settings.startMinutesPerDay} min down to ${settings.endMinutesPerDay} min",
-                    color = Chalk,
-                    style = MaterialTheme.typography.bodyLarge
+                    "Day ${(TaperPlan.dayIndex(settings, today) + 1).coerceAtLeast(1)} of ${settings.planDays} — " +
+                        "from ${settings.startMinutesPerDay} minutes down to ${settings.endMinutesPerDay}.",
+                    color = Mist,
+                    style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(12.dp))
                 TaperCurve(settings.startMinutesPerDay, settings.endMinutesPerDay, settings.planDays)
-                Spacer(Modifier.height(14.dp))
-                OutlinedButton(
+                Spacer(Modifier.height(12.dp))
+                TextButton(
                     onClick = {
                         viewModel.startPlan(
                             settings.planDays,
                             settings.startMinutesPerDay,
                             settings.endMinutesPerDay
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text("Restart the plan from today", color = Amber) }
+                    }
+                ) { Text("Start the plan again from today", color = Amber) }
             }
         }
 
-        // ------------------------------------------------------------ misc
+        // ---------------------------------------------------------------- advanced
         item {
-            SectionCard {
-                SectionLabel("Feel")
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Buzz on each counted rep", color = Chalk, modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = settings.vibrateOnRep,
-                        onCheckedChange = { viewModel.setVibrate(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Ink,
-                            checkedTrackColor = Emerald,
-                            uncheckedThumbColor = Mist,
-                            uncheckedTrackColor = InkCard
-                        )
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                LabelledSlider(
-                    label = "Day rolls over at",
-                    value = settings.rolloverHour.toFloat(),
-                    range = 0f..12f,
-                    steps = 11,
-                    display = { "%02d:00".format(it.roundToInt()) },
-                    onChange = { viewModel.setRolloverHour(it.roundToInt()) }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { showAdvanced = !showAdvanced }
+                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (showAdvanced) "Hide the fiddly bits" else "Show the fiddly bits",
+                    color = Mist,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Default.ExpandMore, null, tint = Mist)
+            }
+        }
+
+        item {
+            AnimatedVisibility(visible = showAdvanced) {
+                SectionCard {
+                    PlainSlider(
+                        "Length of the wait",
+                        settings.cooldownMinutes.toFloat(), 5f..180f, 34,
+                        { "${it.roundToInt()} min" }
+                    ) { viewModel.setCooldownMinutes(it.roundToInt()) }
+
+                    PlainSlider(
+                        "Extra cost per unlock",
+                        settings.escalation, 0f..1.5f, 14,
+                        { "+${(it * 100).roundToInt()}%" }
+                    ) { viewModel.setEscalation(it) }
+
+                    PlainSlider(
+                        "Most unlocks per day",
+                        settings.maxEarnedUnlocksPerDay.toFloat(), 1f..20f, 18,
+                        { "${it.roundToInt()}" }
+                    ) { viewModel.setMaxEarnedUnlocks(it.roundToInt()) }
+
+                    PlainSlider(
+                        "New day starts at",
+                        settings.rolloverHour.toFloat(), 0f..12f, 11,
+                        { "%02d:00".format(it.roundToInt()) }
+                    ) { viewModel.setRolloverHour(it.roundToInt()) }
+
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Allow buying time at all", color = Chalk, fontSize = 15.sp)
+                            Text(
+                                "Off means the daily minutes are a hard ceiling — no push-up way out.",
+                                color = Mist,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Switch(
+                            checked = settings.allowEarnedUnlocks,
+                            onCheckedChange = { viewModel.setAllowEarned(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Ink,
+                                checkedTrackColor = Emerald,
+                                uncheckedThumbColor = Mist,
+                                uncheckedTrackColor = InkCard
+                            )
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Buzz on each counted rep", color = Chalk, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = settings.vibrateOnRep,
+                            onCheckedChange = { viewModel.setVibrate(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Ink,
+                                checkedTrackColor = Emerald,
+                                uncheckedThumbColor = Mist,
+                                uncheckedTrackColor = InkCard
+                            )
+                        )
+                    }
+                }
             }
         }
 
         item {
             Text(
-                "Everything runs on this phone. No account, no server, no analytics. " +
-                    "Camera frames are processed live and never stored.",
+                "Everything stays on this phone. No account, no server, and the app has no " +
+                    "internet permission at all — it cannot send anything anywhere.",
                 color = Mist,
                 fontSize = 12.sp
             )
@@ -382,7 +413,62 @@ fun SettingsScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun LabelledSlider(
+private fun UninstallProtectionRow(
+    active: Boolean,
+    canRemove: Boolean,
+    onEnable: () -> Unit,
+    onRemove: () -> Unit
+) {
+    if (active) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Check, null, tint = Emerald, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Cannot be uninstalled", color = Emerald, modifier = Modifier.weight(1f), fontSize = 14.sp)
+            TextButton(onClick = onRemove) {
+                Text(if (canRemove) "Remove" else "Locked", color = Mist, fontSize = 13.sp)
+            }
+        }
+    } else {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Crimson.copy(alpha = 0.12f))
+                .clickable(onClick = onEnable)
+                .padding(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, null, tint = Crimson, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Anyone can uninstall this app", color = Crimson, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Long-press the icon, hit uninstall, and the whole thing is gone in two " +
+                            "seconds. Tap here to stop that.",
+                        color = Mist,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Banner(text: String, color: androidx.compose.ui.graphics.Color) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(color.copy(alpha = 0.12f))
+            .padding(12.dp)
+    ) {
+        Text(text, color = color, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun PlainSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
@@ -411,7 +497,7 @@ private fun LabelledSlider(
 
 @Composable
 private fun TaperCurve(start: Int, end: Int, days: Int) {
-    androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(70.dp)) {
+    androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(64.dp)) {
         val n = days.coerceAtLeast(2)
         val gap = size.width * 0.02f
         val barWidth = (size.width - gap * (n - 1)) / n
@@ -431,9 +517,7 @@ private fun TaperCurve(start: Int, end: Int, days: Int) {
     }
 }
 
-private fun priceLadder(baseReps: Int, escalation: Float): String {
-    val ladder = (0 until 4).map { i ->
-        (baseReps * (1f + escalation * i)).roundToInt().coerceAtLeast(1)
-    }
-    return "Today's ladder: ${ladder.joinToString(" → ")} reps, and up from there."
-}
+private fun priceLadder(baseReps: Int, escalation: Float): String =
+    (0 until 4).joinToString(" → ") { i ->
+        (baseReps * (1f + escalation * i)).roundToInt().coerceAtLeast(1).toString()
+    } + " reps"

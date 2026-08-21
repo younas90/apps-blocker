@@ -1,6 +1,9 @@
 package com.pushgate.app
 
 import android.app.Application
+import android.util.Log
+import androidx.camera.camera2.Camera2Config
+import androidx.camera.core.CameraXConfig
 import com.pushgate.app.block.BlockerAccessibilityService
 import com.pushgate.app.block.BlockerForegroundService
 import com.pushgate.app.block.Notifications
@@ -12,7 +15,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class PushGateApp : Application() {
+/**
+ * Implements [CameraXConfig.Provider] deliberately.
+ *
+ * Left to itself, CameraX finds its default configuration by *reflecting* on
+ * `androidx.camera.camera2.Camera2Config`. R8 renames that class in a minified release build, the
+ * reflection misses, and `ProcessCameraProvider.getInstance()` fails with nothing but
+ * "CameraX failed to initialize" — which is what made the push-up challenge report that the camera
+ * was unavailable on a phone whose camera was perfectly fine.
+ *
+ * Declaring the config here removes the reflection from the path entirely, so release builds
+ * behave exactly like debug ones.
+ */
+class PushGateApp : Application(), CameraXConfig.Provider {
+
+    override fun getCameraXConfig(): CameraXConfig =
+        CameraXConfig.Builder.fromConfig(Camera2Config.defaultConfig())
+            .setMinimumLoggingLevel(Log.ERROR)
+            .build()
 
     override fun onCreate() {
         super.onCreate()

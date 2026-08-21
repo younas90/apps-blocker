@@ -193,61 +193,118 @@ private fun CameraSurface(
         }
     }
     val useFront = controller.mirrored
+    val attempt = controller.cameraAttempt
 
-    DisposableEffect(useFront) {
+    DisposableEffect(useFront, attempt) {
         val analyzer = PoseAnalyzer(
             context = context,
             onFrame = { frame -> controller.onFrame(frame) },
             onError = { msg -> controller.onPoseError(msg) }
         )
 
-        val providerFuture = ProcessCameraProvider.getInstance(context)
         var boundProvider: ProcessCameraProvider? = null
+        var cancelled = false
 
-        providerFuture.addListener({
-            val provider = runCatching { providerFuture.get() }.getOrNull()
-            if (provider == null) {
-                controller.onPoseError("Camera is unavailable on this device.")
-                return@addListener
-            }
-            boundProvider = provider
+        // Model load and camera open both block; doing them on the main thread freezes the
+        // challenge screen for a second or two right when the user is trying to get into position.
+        analysisExecutor.execute {
+            analyzer.initialize()
+            if (cancelled) return@execute
 
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+            val providerFuture = ProcessCameraProvider.getInstance(context)
+            providerFuture.addListener({
+                if (cancelled) return@addListener
 
-            val resolution = ResolutionSelector.Builder()
-                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
-                .setResolutionStrategy(
-                    ResolutionStrategy(
-                        Size(1280, 720),
-                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                val attempted = runCatching { providerFuture.get() }
+                val provider = attempted.getOrNull()
+                if (provider == null) {
+                    val why = attempted.exceptionOrNull()
+                    // Report the real cause. "Camera unavailable" on a phone with a working camera
+                    // is almost always CameraX failing to initialise, not missing hardware.
+                    controller.onPoseError(
+                        buildString {
+                            append("CameraX could not start.
+
+")
+                            append(
+                                why?.let { "${it.javaClass.simpleName}: ${it.message ?: "no message"}" }
+                                    ?: "The camera provider returned nothing."
+                            )
+                        }
                     )
+                    return@addListener
+                }
+                boundProvider = provider
+
+                val hasFront = runCatching {
+                    provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
+                }.getOrDefault(false)
+                val hasBack = runCatching {
+                    provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
+                }.getOrDefault(false)
+
+                if (!hasFront && !hasBack) {
+                    controller.onPoseError("This device reports no usable camera.")
+                    return@addListener
+                }
+
+                // Honour the preference only if that lens actually exists.
+                val selector = when {
+                    useFront && hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+                    !useFront && hasBack -> CameraSelector.DEFAULT_BACK_CAMERA
+                    hasBack -> CameraSelector.DEFAULT_BACK_CAMERA
+                    else -> CameraSelector.DEFAULT_FRONT_CAMERA
+                }
+                controller.onLensResolved(
+                    front = selector == CameraSelector.DEFAULT_FRONT_CAMERA,
+                    canFlip = hasFront && hasBack
                 )
-                .build()
 
-            val analysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .setResolutionSelector(resolution)
-                .build()
-                .also { it.setAnalyzer(analysisExecutor, analyzer) }
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
 
-            val selector = if (useFront) {
-                CameraSelector.DEFAULT_FRONT_CAMERA
-            } else {
-                CameraSelector.DEFAULT_BACK_CAMERA
-            }
+                val resolution = ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(1280, 720),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                        )
+                    )
+                    .build()
 
-            runCatching {
-                provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, selector, preview, analysis)
-            }.onFailure {
-                controller.onPoseError("Could not open the camera: ${it.message}")
-            }
-        }, ContextCompat.getMainExecutor(context))
+                val analysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                    .setResolutionSelector(resolution)
+                    .build()
+                    .also { it.setAnalyzer(analysisExecutor, analyzer) }
+
+                runCatching {
+                    provider.unbindAll()
+                    provider.bindToLifecycle(lifecycleOwner, selector, preview, analysis)
+                }.onFailure { t ->
+                    // Binding preview + analysis together exceeds what a few low-end devices
+                    // support. Preview alone is useless for counting, so drop the preview instead.
+                    val fallback = runCatching {
+                        provider.unbindAll()
+                        provider.bindToLifecycle(lifecycleOwner, selector, analysis)
+                    }
+                    if (fallback.isFailure) {
+                        controller.onPoseError(
+                            "Could not open the camera.
+
+" +
+                                "${t.javaClass.simpleName}: ${t.message ?: "no message"}"
+                        )
+                    }
+                }
+            }, ContextCompat.getMainExecutor(context))
+        }
 
         onDispose {
+            cancelled = true
             runCatching { boundProvider?.unbindAll() }
             analyzer.close()
         }

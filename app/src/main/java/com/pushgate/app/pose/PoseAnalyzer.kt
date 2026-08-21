@@ -13,6 +13,7 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** One analysed frame, in both spaces the counter and the overlay need. */
 data class PoseFrame(
@@ -36,9 +37,6 @@ data class PoseFrame(
  *
  * Everything runs on-device: no frame, no landmark and no image ever leaves the phone, which is
  * the only defensible way to ship a feature that asks people to point a camera at themselves.
- *
- * GPU delegate first, CPU as a fallback — the lite model still holds 30fps on CPU on a mid-range
- * device, it just costs more battery.
  */
 class PoseAnalyzer(
     context: Context,
@@ -54,20 +52,55 @@ class PoseAnalyzer(
     @Volatile private var lastImageHeight = 0
     @Volatile var usingGpu: Boolean = false
         private set
+    @Volatile var ready: Boolean = false
+        private set
 
-    /** Rolling FPS, surfaced in the UI so a stalled pipeline is visible rather than silent. */
+    /**
+     * LIVE_STREAM mode rejects any frame whose timestamp is not strictly greater than the last.
+     * Wall-clock milliseconds repeat whenever two frames land inside the same millisecond, and
+     * MediaPipe then throws the frame away — the preview looks alive while the skeleton never
+     * appears. A monotonic counter makes that impossible.
+     */
+    private val timestamp = AtomicLong(0L)
+
     @Volatile var fps: Float = 0f
         private set
     private var lastFrameAt = 0L
 
-    init {
-        landmarker = build(useGpu = true) ?: build(useGpu = false)
-        if (landmarker == null) {
-            onError("Pose model could not be loaded on this device.")
+    /**
+     * Built off the caller's thread: creating the landmarker unpacks a 6 MB model and initialises
+     * a GPU delegate, which visibly janks the challenge screen if done on the main thread.
+     */
+    fun initialize() {
+        if (closed.get() || landmarker != null) return
+
+        // GPU first for battery and latency; plenty of devices have a delegate that reports
+        // available and then fails to compile the graph, so CPU is a real fallback, not a formality.
+        val gpu = runCatching { build(useGpu = true) }
+        gpu.getOrNull()?.let {
+            landmarker = it
+            usingGpu = true
+            ready = true
+            return
         }
+        Log.w(TAG, "GPU delegate unavailable, falling back to CPU", gpu.exceptionOrNull())
+
+        val cpu = runCatching { build(useGpu = false) }
+        cpu.getOrNull()?.let {
+            landmarker = it
+            usingGpu = false
+            ready = true
+            return
+        }
+
+        val why = cpu.exceptionOrNull() ?: gpu.exceptionOrNull()
+        onError(
+            "The pose model would not start on this device.\n\n" +
+                (why?.let { "${it.javaClass.simpleName}: ${it.message}" } ?: "Unknown cause.")
+        )
     }
 
-    private fun build(useGpu: Boolean): PoseLandmarker? = runCatching {
+    private fun build(useGpu: Boolean): PoseLandmarker {
         val base = BaseOptions.builder()
             .setModelAssetPath(MODEL_ASSET)
             .setDelegate(if (useGpu) Delegate.GPU else Delegate.CPU)
@@ -82,13 +115,10 @@ class PoseAnalyzer(
             .setMinTrackingConfidence(0.5f)
             .setOutputSegmentationMasks(false)
             .setResultListener { result, _ -> publish(result) }
-            .setErrorListener { e -> Log.w(TAG, "PoseLandmarker error", e) }
+            .setErrorListener { e -> Log.w(TAG, "PoseLandmarker runtime error", e) }
             .build()
 
-        PoseLandmarker.createFromOptions(appContext, options).also { usingGpu = useGpu }
-    }.getOrElse {
-        Log.w(TAG, "Failed to create PoseLandmarker (gpu=$useGpu)", it)
-        null
+        return PoseLandmarker.createFromOptions(appContext, options)
     }
 
     override fun analyze(image: ImageProxy) {
@@ -105,13 +135,18 @@ class PoseAnalyzer(
             lastImageWidth = if (rotated90) image.height else image.width
             lastImageHeight = if (rotated90) image.width else image.height
 
-            val bitmap = image.toArgbBitmap() ?: run { image.close(); return }
+            val bitmap = image.toArgbBitmap()
+            if (bitmap == null) {
+                image.close()
+                return
+            }
+
             val mpImage = BitmapImageBuilder(bitmap).build()
             val processing = ImageProcessingOptions.builder()
                 .setRotationDegrees(rotation)
                 .build()
 
-            marker.detectAsync(mpImage, processing, System.currentTimeMillis())
+            marker.detectAsync(mpImage, processing, timestamp.incrementAndGet())
         } catch (t: Throwable) {
             Log.w(TAG, "analyze failed", t)
         } finally {
@@ -140,12 +175,7 @@ class PoseAnalyzer(
         }
 
         val normalized = landmarkList.map { lm ->
-            P3(
-                x = lm.x(),
-                y = lm.y(),
-                z = lm.z(),
-                visibility = lm.visibility().orElse(0f)
-            )
+            P3(lm.x(), lm.y(), lm.z(), lm.visibility().orElse(0f))
         }
 
         val worldList = result.worldLandmarks().firstOrNull()
@@ -160,6 +190,7 @@ class PoseAnalyzer(
 
     fun close() {
         if (closed.compareAndSet(false, true)) {
+            ready = false
             runCatching { landmarker?.close() }
             landmarker = null
         }
@@ -172,24 +203,25 @@ class PoseAnalyzer(
 }
 
 /**
- * CameraX is configured for RGBA_8888 output, so the plane is already a straight ARGB buffer and
- * this is a copy rather than a YUV conversion.
+ * CameraX is configured for RGBA_8888 output, so the plane is already a straight ARGB buffer.
+ *
+ * The row-stride dance matters: many devices pad each row out to a hardware alignment, and
+ * copying such a buffer into a tightly-packed bitmap shears the image diagonally — which the pose
+ * model reads as a person who is not there.
  */
 private fun ImageProxy.toArgbBitmap(): Bitmap? = runCatching {
-    val plane = planes[0]
+    val plane = planes.firstOrNull() ?: return@runCatching null
     val buffer = plane.buffer
     buffer.rewind()
 
-    val pixelStride = plane.pixelStride
+    val pixelStride = plane.pixelStride.coerceAtLeast(1)
     val rowStride = plane.rowStride
-    val rowPadding = rowStride - pixelStride * width
+    val paddedWidth = rowStride / pixelStride
+    if (paddedWidth < width || height <= 0) return@runCatching null
 
-    val bitmap = Bitmap.createBitmap(
-        width + rowPadding / pixelStride,
-        height,
-        Bitmap.Config.ARGB_8888
-    )
-    bitmap.copyPixelsFromBuffer(buffer)
+    val padded = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
+    if (buffer.remaining() < rowStride * height) return@runCatching null
+    padded.copyPixelsFromBuffer(buffer)
 
-    if (rowPadding == 0) bitmap else Bitmap.createBitmap(bitmap, 0, 0, width, height)
+    if (paddedWidth == width) padded else Bitmap.createBitmap(padded, 0, 0, width, height)
 }.getOrNull()

@@ -202,8 +202,8 @@ private fun Welcome(onNext: () -> Unit) {
             )
             Bullet(
                 "Hard to weasel out of",
-                "Uninstall protection, a guard on the Settings screens that would switch it off, and a " +
-                    "cooldown before any of it can be undone."
+                "Uninstall protection, a guard on the Settings screens that would switch it off, and " +
+                    "a wait before anything can be undone — including deleting an app from the list."
             )
             Bullet(
                 "Nothing leaves your phone",
@@ -460,13 +460,24 @@ private fun PermissionsStep(viewModel: MainViewModel, onNext: () -> Unit) {
         title = "Three switches",
         subtitle = "Android will not let an app grant these to itself. That is the point — and it is " +
             "also why nobody can flip them behind your back.",
-        ctaLabel = if (protection.accessibilityEnabled) "Continue" else "Skip for now",
+        ctaLabel = when {
+            protection.accessibilityEnabled && protection.deviceAdminActive -> "Continue"
+            protection.accessibilityEnabled -> "Continue without uninstall protection"
+            else -> "Skip for now"
+        },
         onCta = onNext,
         footer = {
-            if (!protection.accessibilityEnabled) {
-                Spacer(Modifier.height(6.dp))
+            val warning = when {
+                !protection.accessibilityEnabled ->
+                    "Without the accessibility service nothing gets blocked at all."
+                !protection.deviceAdminActive ->
+                    "Without uninstall protection, one long-press deletes the whole thing."
+                else -> null
+            }
+            if (warning != null) {
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    "Without the accessibility service nothing gets blocked at all.",
+                    warning,
                     color = Crimson,
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center,
@@ -504,11 +515,16 @@ private fun PermissionsStep(viewModel: MainViewModel, onNext: () -> Unit) {
 
             PermissionCard(
                 title = "Uninstall protection",
-                body = "Registers PushGate as a device admin so it cannot be uninstalled on an impulse. " +
-                    "It has no other powers — no wipe, no lock, no reading anything.",
+                body = "Without this, long-pressing the PushGate icon and tapping uninstall wipes " +
+                    "everything in two seconds — no wait, no push-ups. Turning it on is what makes " +
+                    "the rest of this app mean anything.
+
+" +
+                    "It registers PushGate as a device admin and nothing else: no wipe, no lock, " +
+                    "no reading your screen.",
                 done = protection.deviceAdminActive,
-                required = false,
-                cta = "Turn on"
+                required = true,
+                cta = "Turn on uninstall protection"
             ) {
                 GuardBypass.open(5, "onboarding: device admin")
                 runCatching {

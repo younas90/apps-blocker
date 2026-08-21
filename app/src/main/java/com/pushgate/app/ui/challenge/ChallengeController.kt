@@ -53,6 +53,11 @@ class ChallengeController(
         private set
     var fps by mutableStateOf(0f)
         private set
+    /** Bumped to force the camera effect to tear down and rebuild on a retry. */
+    var cameraAttempt by mutableStateOf(0)
+        private set
+    var canFlipCamera by mutableStateOf(true)
+        private set
 
     private var counter: PushUpCounter? = null
     private var startedAt = 0L
@@ -85,13 +90,32 @@ class ChallengeController(
     }
 
     fun onPoseError(message: String) {
+        // A late failure from a torn-down camera must not wipe a set the user already finished.
+        if (finished) return
         errorMessage = message
         stage = ChallengeStage.ERROR
     }
 
     fun toggleCamera() {
+        if (!canFlipCamera) return
         mirrored = !mirrored
         scope.launch { repo.settingsStore.setCameraFront(mirrored) }
+    }
+
+    /**
+     * The camera layer reports which lens it could actually open. Asking for the front camera on
+     * a device that only has a rear one previously produced a blank screen and no explanation.
+     */
+    fun onLensResolved(front: Boolean, canFlip: Boolean) {
+        mirrored = front
+        canFlipCamera = canFlip
+    }
+
+    fun retryCamera() {
+        errorMessage = null
+        cameraAttempt += 1
+        stage = if (counter == null) ChallengeStage.LOADING else ChallengeStage.RUNNING
+        if (counter == null) begin()
     }
 
     fun onFrame(f: PoseFrame) {

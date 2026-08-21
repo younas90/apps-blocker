@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -77,6 +80,7 @@ fun ChallengeScreen(
 
             ChallengeStage.ERROR -> ErrorPanel(
                 message = controller.errorMessage ?: "Something went wrong.",
+                onRetry = controller::retryCamera,
                 onGiveUp = onGiveUp
             )
 
@@ -434,23 +438,58 @@ private fun CameraGate(
 }
 
 @Composable
-private fun ErrorPanel(message: String, onGiveUp: () -> Unit) {
+private fun ErrorPanel(message: String, onRetry: () -> Unit, onGiveUp: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(30.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            "Camera trouble",
+            "The camera did not start",
             color = Chalk,
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(12.dp))
-        Text(message, color = Mist, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Your quota is untouched — nothing was counted against you.",
+            color = Mist,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyLarge
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        // The exact cause, verbatim. A generic "camera unavailable" on a phone whose camera works
+        // is impossible to act on, and impossible for anyone to report usefully.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = 0.06f))
+                .padding(14.dp)
+        ) {
+            Text(
+                message,
+                color = Mist,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+
         Spacer(Modifier.height(24.dp))
+
         Button(
-            onClick = onGiveUp,
-            colors = ButtonDefaults.buttonColors(containerColor = Emerald, contentColor = Ink)
-        ) { Text("Back", fontWeight = FontWeight.Bold) }
+            onClick = onRetry,
+            colors = ButtonDefaults.buttonColors(containerColor = Emerald, contentColor = Ink),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(14.dp)
+        ) { Text("Try again", fontWeight = FontWeight.Bold) }
+
+        Spacer(Modifier.height(6.dp))
+        TextButton(onClick = onGiveUp) { Text("Back", color = Mist) }
     }
 }
